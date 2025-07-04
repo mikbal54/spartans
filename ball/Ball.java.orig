@@ -1,0 +1,204 @@
+package com.spartans.ball;
+
+import aurelienribon.tweenengine.BaseTween;
+import aurelienribon.tweenengine.Tween;
+import aurelienribon.tweenengine.TweenAccessor;
+import aurelienribon.tweenengine.TweenCallback;
+import aurelienribon.tweenengine.TweenEquations;
+import aurelienribon.tweenengine.TweenManager;
+import aurelienribon.tweenengine.equations.Cubic;
+import aurelienribon.tweenengine.equations.Linear;
+
+import com.badlogic.gdx.math.Intersector;
+import com.engine.AnimatedEntity;
+import com.engine.AnimatedEntityInfo;
+import com.engine.AnimationLoader;
+import com.engine.Engine;
+import com.engine.Log;
+import com.engine.Renderer;
+import com.engine.TextureLoader;
+import com.engine.Utility;
+import com.spartans.Spartans;
+import com.spartans.enemies.BallTarget;
+import com.spartans.levels.Level;
+import com.spartans.player.Player;
+
+public class Ball implements TweenAccessor<Ball>
+{
+    public AnimatedEntity animatedEntity;
+
+    public enum State
+    {
+        Dribbling, GoingToTarget, ReturningToPlayer
+    }
+
+    final int POSITION = 1;
+
+    public State state;
+
+    public float velX;
+    public float velY;
+    
+    public float dribblingDistanceFromPlayer;
+
+    public float airDrag;
+
+    public BallTarget currentTarget;
+
+    public class ArrivedAtShotTarget implements TweenCallback
+    {
+
+        @Override
+        public void onEvent(int type, BaseTween<?> source)
+        {
+            currentTarget.Hit();
+            currentTarget = null;
+            state = State.ReturningToPlayer;
+            BounceFromEnemyHit();
+        }
+
+    }
+
+    public class ReturnedBackToPlayer implements TweenCallback
+    {
+
+        @Override
+        public void onEvent(int type, BaseTween<?> source)
+        {
+            // TODO: Oyuncuya carptimi diye control et. capmadiysa oyuncu kotu oynuyor
+            state = State.Dribbling;
+        }
+
+    }
+
+    // top hic birseye vurmazsa bu calirilacak
+    ArrivedAtShotTarget arrivedAtShotTarget;
+    ReturnedBackToPlayer returnedBackToPlayer;
+
+    TweenManager tweenManager; // topa animasyon vermek icin gerekli
+
+    public Ball(float playerX, float playerY, float distanceToPlayer, TextureLoader textureLoader, TweenManager tweenManager, Level currentLevel)
+    {
+        dribblingDistanceFromPlayer = distanceToPlayer;
+        this.tweenManager = tweenManager;
+        airDrag = .1f;
+        returnedBackToPlayer = new ReturnedBackToPlayer();
+        arrivedAtShotTarget = new ArrivedAtShotTarget();
+        state = State.Dribbling;
+
+        AnimatedEntityInfo info = AnimationLoader.Load("data/test/ball.anim");
+        animatedEntity = new AnimatedEntity(textureLoader, info, 64, 64, 0.5f, 0.5f);
+
+        currentLevel.Add(animatedEntity, 8);
+
+        animatedEntity.x = playerX + distanceToPlayer;
+        animatedEntity.y = playerY;
+        
+        Tween.registerAccessor(Ball.class, this);
+    }
+
+    public void BounceFromEnemyHit()
+    {
+
+        velX += Utility.RandomDouble(-5, 1);
+
+        if (velX < -2)
+            velY += Utility.RandomDouble(-20, +4);
+        else
+            velY += Utility.RandomDouble(-20, +11);
+    }
+
+    public void Update(float timePassed, Player player, float groundHeight)
+    {
+        switch (state)
+        {
+        case Dribbling:
+            // TODO: oyuncunun genisliginine gore pozisyonlaS
+            animatedEntity.x += player.stats.runSpeed * timePassed;
+            break;
+        case GoingToTarget:
+            // TODO: burda herhangi bir hedefe carptimi kontrol et
+            break;
+        case ReturningToPlayer:
+            animatedEntity.x += velX * timePassed;
+            animatedEntity.y += velY * timePassed;
+
+            /**/
+            if (velX > 0f)
+                velX -= timePassed * airDrag;
+            else if (velX < 0f)
+                velX += timePassed * airDrag;
+
+            if (animatedEntity.y > groundHeight)
+                velY -= 9.8f * timePassed;
+            else
+            {
+                if (velY < 1f)
+                {
+                    velY *= 0.4f; // hizini yariya kes
+                    velY = -velY;
+                }
+            }
+
+            //return x < r.x + r.width && x + width > r.x && y < r.y + r.height && y + height > r.y;
+            if (animatedEntity.x < player.x + player.widthMeters && animatedEntity.x + animatedEntity.width > player.x && animatedEntity.y < player.y + player.heightMeters && animatedEntity.y + animatedEntity.heightMeters > player.y)
+            {
+                // top oyuncunun ayagina yapisir
+                state = State.Dribbling;
+                Tween.to(this, 1, 0.3f).ease(TweenEquations.easeInSine).target(player.x + dribblingDistanceFromPlayer + 0.3f * player.stats.runSpeed, groundHeight).start(tweenManager);
+            }
+            break;
+
+        default:
+            break;
+        }
+
+    }
+
+    // bi aciyla topu firlat. aci derece cinsinden. len ne kader uzaga gidecegi
+    public void Shoot(BallTarget target, float shotSpeed)
+    {
+        currentTarget = target;
+        state = State.GoingToTarget;
+
+        // topun ortasi hedefin ortasini vursun diye
+        float targetX = target.BallTargetX() - animatedEntity.widthMeters / 2;
+        float targetY = target.BallTargetY() - animatedEntity.heightMeters / 2;
+
+        float x2 = animatedEntity.x - targetX;
+        x2 *= x2;
+
+        float y2 = animatedEntity.y - targetY;
+        y2 *= y2;
+
+        float timeTakes = (float) (Math.sqrt(x2 + y2) / shotSpeed);
+
+        Tween.to(this, 1, timeTakes).ease(Linear.INOUT).target(targetX, targetY).setCallback(arrivedAtShotTarget).start(tweenManager);
+    }
+
+    @Override
+    public int getValues(Ball target, int tweenType, float[] returnValues)
+    {
+        switch (tweenType)
+        {
+        case POSITION:
+            returnValues[0] = animatedEntity.x;
+            returnValues[1] = animatedEntity.y;
+            return 2;
+        }
+        return 0;
+    }
+
+    @Override
+    public void setValues(Ball target, int tweenType, float[] newValues)
+    {
+        switch (tweenType)
+        {
+        case POSITION:
+            animatedEntity.x = newValues[0];
+            animatedEntity.y = newValues[1];
+            break;
+        }
+    }
+
+}

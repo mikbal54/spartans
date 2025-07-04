@@ -1,0 +1,389 @@
+package com.spartans.levels;
+
+import java.util.ArrayList;
+
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.engine.AnimatedEntity;
+import com.engine.AnimatedEntityInfo;
+import com.engine.AnimationLoader;
+import com.engine.Engine;
+import com.engine.Log;
+import com.engine.Renderer;
+import com.engine.SkeletonDataLoader;
+import com.engine.SkeletonEntity;
+import com.engine.StaticEntity;
+import com.engine.TextureLoader;
+import com.spartans.CameraManager;
+import com.spartans.Spartans;
+import com.spartans.enemies.BallTarget;
+import com.spartans.enemies.Enemy;
+import com.spartans.enemies.EnemySliding;
+import com.spartans.player.Player;
+
+public class Level
+{
+    protected ArrayList<ArrayList<StaticEntity>> staticEntities = new ArrayList<ArrayList<StaticEntity>>(10);
+    protected ArrayList<ArrayList<AnimatedEntity>> animatedEntities = new ArrayList<ArrayList<AnimatedEntity>>(10);
+    protected ArrayList<ArrayList<SkeletonEntity>> skeletonEntities = new ArrayList<ArrayList<SkeletonEntity>>(10);
+
+    protected ArrayList<ArrayList<StaticEntity>> backgroundStaticEntities = new ArrayList<ArrayList<StaticEntity>>(10);
+    protected ArrayList<ArrayList<AnimatedEntity>> backgroundAnimatedEntities = new ArrayList<ArrayList<AnimatedEntity>>(10);;
+
+    public ArrayList<BallTarget> ballTargets;
+
+    public ArrayList<Enemy> enemies;
+
+    public LevelInfo info;
+
+    public Level()
+    {
+
+        ballTargets = new ArrayList<BallTarget>();
+        enemies = new ArrayList<Enemy>();
+
+        backgroundStaticEntities.ensureCapacity(10);
+        for (int i = 0; i < 10; ++i)
+            backgroundStaticEntities.add(new ArrayList<StaticEntity>());
+
+        backgroundAnimatedEntities.ensureCapacity(10);
+        for (int i = 0; i < 10; ++i)
+            backgroundAnimatedEntities.add(new ArrayList<AnimatedEntity>());
+
+        staticEntities.ensureCapacity(10);
+        for (int i = 0; i < 10; ++i)
+            staticEntities.add(new ArrayList<StaticEntity>());
+
+        animatedEntities.ensureCapacity(10);
+        for (int i = 0; i < 10; ++i)
+            animatedEntities.add(new ArrayList<AnimatedEntity>());
+
+        skeletonEntities.ensureCapacity(10);
+        for (int i = 0; i < 10; ++i)
+            skeletonEntities.add(new ArrayList<SkeletonEntity>());
+    }
+
+    // obje nin zindex ini degistirir. Basarirsa bi onceki zindex i donurur,
+    // basaramazsa -1 dondurur.
+    // DIKKAT! bu baya yavas bi fonksiyon, sikca kullanma
+    public int ChangeZIndex(StaticEntity entity, int newZIndex)
+    {
+        int currentZIndex = -1;
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<StaticEntity> arr = staticEntities.get(i);
+            for (int j = 0; j < 10; ++j)
+            {
+                if (arr.get(j) == entity)
+                {
+                    // found it, remove it!
+                    arr.remove(j);
+                    currentZIndex = i;
+                    i = 10;
+                    break;
+                }
+            }
+        }
+
+        if (currentZIndex != -1)
+            staticEntities.get(newZIndex).add(entity);
+
+        return currentZIndex;
+    }
+
+    // obje nin zindex ini degistirir. Basarirsa bi onceki zindex i donurur,
+    // basaramazsa -1 dondurur.
+    // DIKKAT! bu baya yavas bi fonksiyon, sikca kullanma
+    public int ChangeZIndex(AnimatedEntity entity, int newZIndex)
+    {
+        int currentZIndex = -1;
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<AnimatedEntity> arr = animatedEntities.get(i);
+            for (int j = 0; j < 10; ++j)
+            {
+                if (arr.get(j) == entity)
+                {
+                    // found it, remove it!
+                    arr.remove(j);
+                    currentZIndex = i;
+                    i = 10;
+                    break;
+                }
+            }
+        }
+
+        if (currentZIndex != -1)
+            animatedEntities.get(newZIndex).add(entity);
+
+        return currentZIndex;
+    }
+
+    public float GetGroundHeight()
+    {
+        return info.startY;
+    }
+
+    void CreateEnemies(TextureLoader textureLoader)
+    {
+        for (LevelInfo.Enemy enemy : info.enemies)
+        {
+
+            if (enemy.enemyType.equals("sliding"))
+            {
+                // EnemySlidings kendisini updater.ballTargets in icine alir
+                EnemySliding newEnemy = new EnemySliding(textureLoader, enemy);
+                ballTargets.add(newEnemy);
+                enemies.add(newEnemy);
+
+                Add(newEnemy.animatedEntity, enemy.zIndex);
+            }
+            else
+                Log.Print("Error: there is no type of enemy called: " + enemy.enemyType);
+
+        }
+    }
+
+    void CreateBackground(TextureLoader textureLoader)
+    {
+        for (LevelInfo.StaticDecor decor : info.background.staticDecors)
+        {
+            StaticEntity staticEntity = new StaticEntity(textureLoader, decor.atlasPath, decor.image, decor.widthMeters, decor.heightMeters);
+            staticEntity.SetTransform(decor);
+            AddBackground(staticEntity, decor.zIndex); // over ground
+        }
+
+        for (LevelInfo.AnimatedDecor decor : info.background.animatedDecors)
+        {
+            // TODO: IMPORTANT cache AnimatedEntityInfo, we should not parse
+            // this xml over and over again
+            AnimatedEntityInfo animInfo = AnimationLoader.Load(decor.animFilePath);
+            AnimatedEntity animatedEntity = new AnimatedEntity(textureLoader, animInfo, decor.width, decor.height, decor.widthMeters, decor.heightMeters);
+            animatedEntity.SetTransform(decor);
+            AddBackground(animatedEntity, decor.zIndex);
+        }
+    }
+
+    // bolum zeminin olusturur
+    void CreateGround(TextureLoader textureLoader)
+    {
+        for (int i = -10; i < info.ground.repeat; ++i)
+        {
+            StaticEntity ground = new StaticEntity(textureLoader, info.ground.atlasPath, info.ground.imagePath, info.ground.widthMeters, info.ground.heightMeters);
+            ground.height = info.ground.height;
+            ground.width = info.ground.width;
+            ground.x = i * (ground.width) / Renderer.PixelPerMeter;
+            Add(ground, 9);
+        }
+    }
+
+    // animasyonlu olmayan decorlari olusturur
+    void CreateStaticDecors(TextureLoader textureLoader)
+    {
+        for (LevelInfo.StaticDecor decor : info.staticDecors)
+        {
+            StaticEntity staticEntity = new StaticEntity(textureLoader, decor.atlasPath, decor.image, decor.widthMeters, decor.heightMeters);
+            staticEntity.SetTransform(decor);
+            Add(staticEntity, decor.zIndex); // over ground
+        }
+    }
+
+    void CreateAnimatedDecors(TextureLoader textureLoader)
+    {
+        for (LevelInfo.AnimatedDecor decor : info.animatedDecors)
+        {
+            // TODO: IMPORTANT cache AnimatedEntityInfo, we should not parse
+            // this xml over and over again
+            AnimatedEntityInfo animInfo = AnimationLoader.Load(decor.animFilePath);
+            AnimatedEntity animatedEntity = new AnimatedEntity(textureLoader, animInfo, decor.width, decor.height, decor.widthMeters, decor.heightMeters);
+            animatedEntity.SetTransform(decor);
+            animatedEntity.SetAnimation("default");
+            Add(animatedEntity, decor.zIndex); // over ground
+        }
+    }
+
+    public void LoadFiles(String levelXml, TextureLoader textureLoader, SkeletonDataLoader skeletonDataLoader)
+    {
+        long startTime = System.nanoTime();
+
+        info = new LevelInfo(levelXml);
+
+        for (String texture : info.textures)
+            textureLoader.LoadTexture(texture);
+
+        for (String sprite : info.sprites)
+            textureLoader.LoadAtlas(sprite);
+
+        for (String anim : info.anims)
+        {
+            // TODO: load and cache anims
+        }
+
+        for (String skeleton : info.skeletons)
+            skeletonDataLoader.LoadSkeletonData(skeleton);
+
+        long endTime = System.nanoTime();
+        if (Log.isLogging)
+        {
+            long dur = endTime - startTime;
+            Log.Print("Level Assets Loaded (" + dur / 1000000 + "ms) ");
+        }
+
+    }
+
+    public void Create(TextureLoader textureLoader)
+    {
+        CreateBackground(textureLoader);
+        CreateGround(textureLoader);
+        CreateStaticDecors(textureLoader);
+        CreateAnimatedDecors(textureLoader);
+        CreateEnemies(textureLoader);
+    }
+
+    public void Destroy(TextureLoader textureLoader)
+    {
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<StaticEntity> e = backgroundStaticEntities.get(i);
+            int size = e.size();
+            for (int j = 0; j < size; ++j)
+            {
+                e.get(j).Destroy(textureLoader);
+            }
+        }
+        backgroundStaticEntities.clear();
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<AnimatedEntity> e = backgroundAnimatedEntities.get(i);
+            int size = e.size();
+            for (int j = 0; j < size; ++j)
+            {
+                e.get(j).Destroy(textureLoader);
+            }
+        }
+        backgroundAnimatedEntities.clear();
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<StaticEntity> e = staticEntities.get(i);
+            int size = e.size();
+            for (int j = 0; j < size; ++j)
+            {
+                e.get(j).Destroy(textureLoader);
+            }
+        }
+        staticEntities.clear();
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<AnimatedEntity> e = animatedEntities.get(i);
+            int size = e.size();
+            for (int j = 0; j < size; ++j)
+            {
+                e.get(j).Destroy(textureLoader);
+            }
+        }
+        animatedEntities.clear();
+    }
+
+    public void Add(StaticEntity staticEntity, int zIndex)
+    {
+        staticEntities.get(zIndex).add(staticEntity);
+    }
+
+    public void Add(AnimatedEntity animatedEntity, int zIndex)
+    {
+        animatedEntities.get(zIndex).add(animatedEntity);
+    }
+
+    public void Add(SkeletonEntity skeletonEntity, int zIndex)
+    {
+        skeletonEntities.get(zIndex).add(skeletonEntity);
+    }
+
+    public void AddBackground(StaticEntity staticEntity, int layer)
+    {
+        backgroundStaticEntities.get(layer).add(staticEntity);
+    }
+
+    public void AddBackground(AnimatedEntity animatedEntity, int layer)
+    {
+        backgroundAnimatedEntities.get(layer).add(animatedEntity);
+    }
+
+    public void Draw(Renderer renderer, CameraManager cameraManager)
+    {
+        SpriteBatch batch = renderer.batch;
+
+        for (int i = 0; i < 10; ++i)
+        {
+
+            ArrayList<StaticEntity> bse = backgroundStaticEntities.get(i);
+            int size = bse.size();
+            for (int j = 0; j < size; ++j)
+                if (Math.abs(bse.get(j).x - cameraManager.x) < 500)
+                    bse.get(j).Draw(batch);
+
+            ArrayList<AnimatedEntity> ase = backgroundAnimatedEntities.get(i);
+            size = ase.size();
+            for (int j = 0; j < size; ++j)
+                ase.get(j).Draw(batch);
+
+        }
+
+        for (int i = 0; i < 10; ++i)
+        {
+
+            ArrayList<StaticEntity> se = staticEntities.get(i);
+            int size = staticEntities.get(i).size();
+            for (int j = 0; j < size; ++j)
+                if (Math.abs(se.get(j).x - cameraManager.x) < 500)
+                    se.get(j).Draw(batch);
+
+            ArrayList<AnimatedEntity> ae = animatedEntities.get(i);
+            size = animatedEntities.get(i).size();
+            for (int j = 0; j < size; ++j)
+                if (Math.abs(ae.get(j).x - cameraManager.x) < 500)
+                    ae.get(j).Draw(batch);
+
+            ArrayList<SkeletonEntity> ske = skeletonEntities.get(i);
+            size = skeletonEntities.get(i).size();
+            for (int j = 0; j < size; ++j)
+                ske.get(j).Draw(batch);
+
+        }
+
+    }
+
+    // her frame de caliriliyor. her dusmanin Update fonksiyonunu cagirir
+    public void Update(float timePassed, CameraManager cameraManager, Player player)
+    {
+        // background obje leri cameraManager update ediyor.
+        cameraManager.Update(timePassed, backgroundStaticEntities, backgroundAnimatedEntities);
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<AnimatedEntity> ae = animatedEntities.get(i);
+            int size = ae.size();
+            for (int j = 0; j < size; ++j)
+                ae.get(j).Update(timePassed);
+        }
+
+        for (int i = 0; i < 10; ++i)
+        {
+            ArrayList<SkeletonEntity> ske = skeletonEntities.get(i);
+            int size = ske.size();
+            for (int j = 0; j < size; ++j)
+                ske.get(j).Update(timePassed);
+        }
+
+        int size = enemies.size();
+        for (int i = 0; i < size; ++i)
+        {
+            if (enemies.get(i).isActive)
+                enemies.get(i).Update(timePassed, player);
+        }
+    }
+}
